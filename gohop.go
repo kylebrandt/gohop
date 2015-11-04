@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+
+	"bosun.org/opentsdb"
 )
 
 type Client struct {
@@ -85,14 +87,14 @@ type MetricSpec struct {
 }
 
 type MetricStat struct {
-	Duration int `json:"duration"`
-	Oid      int `json:"oid"`
-	Time     int `json:"time"`
+	Duration int64 `json:"duration"`
+	Oid      int64 `json:"oid"`
+	Time     int64 `json:"time"`
 }
 
 type MetricStatSimple struct {
 	MetricStat
-	Values []int `json:"values"`
+	Values []int64 `json:"values"`
 }
 
 type MetricStatKeyed struct {
@@ -102,16 +104,16 @@ type MetricStatKeyed struct {
 			KeyType string `json:"key_type"`
 			Str     string `json:"str"`
 		} `json:"key"`
-		Value int    `json:"value"`
+		Value int64  `json:"value"`
 		Vtype string `json:"vtype"`
 	} `json:"values"`
 }
 
 type MetricResponseBase struct {
 	Cycle  string `json:"cycle"`
-	From   int    `json:"from"`
-	NodeID int    `json:"node_id"`
-	Until  int    `json:"until"`
+	From   int64  `json:"from"`
+	NodeID int64  `json:"node_id"`
+	Until  int64  `json:"until"`
 }
 
 type MetricResponseSimple struct {
@@ -124,7 +126,38 @@ type MetricResponseKeyed struct {
 	Stats []MetricStatKeyed `json:"stats"`
 }
 
-func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, until int64, metricsNames []string, objectIds []int64) (*MetricResponseSimple, error) {
+func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectKey string, objectIdToName map[int64]string) (opentsdb.MultiDataPoint, error) {
+	// Each position in Values should corespond to the order of
+	// of Specs object. So len of Values == len(mq.Specs) I think.
+	// Each item in Stats has a UID, which will map to the
+	// requested object IDs
+	var md opentsdb.MultiDataPoint
+	for _, s := range mr.Stats {
+		name, ok := objectIdToName[s.Oid]
+		if !ok {
+			return md, fmt.Errorf("no name found for oid %s", s.Oid)
+		}
+		time := s.Time
+		if time < 1 {
+			return md, fmt.Errorf("encountered a time less than 1")
+		}
+		for i, v := range s.Values {
+			if len(metricNames) < i {
+				return md, fmt.Errorf("no corresponding metric name at index %v", i)
+			}
+			metricName := metricNames[i]
+			md = append(md, &opentsdb.DataPoint{
+				Metric:    metricName,
+				Timestamp: time / 1000,
+				Tags:      opentsdb.TagSet{objectKey: name},
+				Value:     v,
+			})
+		}
+	}
+	return md, nil
+}
+
+func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, until int64, metricsNames []string, objectIds []int64) (MetricResponseSimple, error) {
 	mq := MetricQuery{
 		Cycle:     cycle,
 		Category:  category,
@@ -138,5 +171,5 @@ func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, unt
 	}
 	m := MetricResponseSimple{}
 	err := c.post("metrics", &mq, &m)
-	return &m, err
+	return m, err
 }
