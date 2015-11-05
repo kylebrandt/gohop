@@ -61,6 +61,15 @@ func (c *Client) post(path string, data interface{}, dst interface{}) error {
 	return c.request(path, "POST", data, dst)
 }
 
+// Posible Values for the Cycle Parameter of a Metric Query
+var (
+	CycleAuto  = "auto"
+	Cycle30Sec = "30sec"
+	Cycle5Min  = "5min"
+	Cycle1Hr   = "1hr"
+	Cycle24Hr  = "24hr"
+)
+
 //Metrics
 type MetricQuery struct {
 	// Can be"auto", "30sec", "5min", "1hr", "24hr"
@@ -165,14 +174,16 @@ func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectK
 	return md, nil
 }
 
-func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, until int64, metricsNames []string, objectIds []int64) (MetricResponseSimple, error) {
+// Simple Metric query is for when you are making a query that doesn't
+// have any facets ("Keys").
+func (c *Client) SimpleMetricQuery(cycle, category, objectType string, fromMS, untilMS int64, metricsNames []string, objectIds []int64) (MetricResponseSimple, error) {
 	mq := MetricQuery{
 		Cycle:     cycle,
 		Category:  category,
 		ObjectIds: objectIds,
 		Type:      objectType,
-		From:      from,
-		Until:     until,
+		From:      fromMS,
+		Until:     untilMS,
 	}
 	for _, name := range metricsNames {
 		mq.Specs = append(mq.Specs, MetricSpec{Name: name})
@@ -182,6 +193,7 @@ func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, unt
 	return m, err
 }
 
+// Keyed Metric query is for when you are making a query that has facets ("Keys"). For example bytes "By L7 Protocol"
 func (mr *MetricResponseKeyed) OpenTSDBDataPoints(metrics []MetricSpec, objectKey string, objectIdToName map[int64]string) (opentsdb.MultiDataPoint, error) {
 	// Only tested against one key, didn't find example with 2 keys yet
 	var md opentsdb.MultiDataPoint
@@ -213,15 +225,15 @@ func (mr *MetricResponseKeyed) OpenTSDBDataPoints(metrics []MetricSpec, objectKe
 	return md, nil
 }
 
-func (c *Client) KeyedMetricQuery(cycle, category, objectType string, from, until int64, metrics []MetricSpec,
+func (c *Client) KeyedMetricQuery(cycle, category, objectType string, fromMS, untilMS int64, metrics []MetricSpec,
 	objectIds []int64) (MetricResponseKeyed, error) {
 	mq := MetricQuery{
 		Cycle:     cycle,
 		Category:  category,
 		ObjectIds: objectIds,
 		Type:      objectType,
-		From:      from,
-		Until:     until,
+		From:      fromMS,
+		Until:     untilMS,
 	}
 	for _, spec := range metrics {
 		mq.Specs = append(mq.Specs, spec)
