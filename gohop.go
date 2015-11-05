@@ -77,13 +77,21 @@ type MetricQuery struct {
 	Until int64  `json:"until"`
 }
 
+type KeyPair struct {
+	Key1Regex        string `json:"key1,omitempty"`
+	Key2Regex        string `json:"key2,omitempty"` // I can't find an example using 2 keys at the moment
+	OpenTSDBKey1     string `json:"-"`
+	Key2OpenTSDBKey2 string `json:"-"`
+}
+
 type MetricSpec struct {
 	Name     string `json:"name"`
 	CalcType string `json:"calc_type"`
 	// The type of Stats.Values changes when there are keys added. It goes from []ints to an [][]structs, so the tag can be included
-	Key1        string  `json:"key1,omitempty"`
-	Key2        string  `json:"key2,omitempty"` // I can't find an example using 2 keys at the moment
+	KeyPair
 	Percentiles []int64 `json:"percentiles,omitempty"`
+	// The following are not part of the extrahop API
+	OpenTSDBMetric string `json:"-"`
 }
 
 type MetricStat struct {
@@ -170,6 +178,55 @@ func (c *Client) SimpleMetricQuery(cycle, category, objectType string, from, unt
 		mq.Specs = append(mq.Specs, MetricSpec{Name: name})
 	}
 	m := MetricResponseSimple{}
+	err := c.post("metrics", &mq, &m)
+	return m, err
+}
+
+func (mr *MetricResponseKeyed) OpenTSDBDataPoints(metrics []MetricSpec, objectKey string, objectIdToName map[int64]string) (opentsdb.MultiDataPoint, error) {
+	// Only tested against one key, didn't find example with 2 keys yet
+	var md opentsdb.MultiDataPoint
+	for _, s := range mr.Stats {
+		name, ok := objectIdToName[s.Oid]
+		if !ok {
+			return md, fmt.Errorf("no name found for oid %s", s.Oid)
+		}
+		time := s.Time
+		if time < 1 {
+			return md, fmt.Errorf("encountered a time less than 1")
+		}
+		for i, values := range s.Values {
+			if len(metrics) < i {
+				return md, fmt.Errorf("no corresponding metric name at index %v", i)
+			}
+			metricName := metrics[i].OpenTSDBMetric
+			key1 := metrics[i].OpenTSDBKey1
+			for _, v := range values {
+				md = append(md, &opentsdb.DataPoint{
+					Metric:    metricName,
+					Timestamp: time / 1000,
+					Tags:      opentsdb.TagSet{objectKey: name, key1: v.Key.Str},
+					Value:     v.Value,
+				})
+			}
+		}
+	}
+	return md, nil
+}
+
+func (c *Client) KeyedMetricQuery(cycle, category, objectType string, from, until int64, metrics []MetricSpec,
+	objectIds []int64) (MetricResponseKeyed, error) {
+	mq := MetricQuery{
+		Cycle:     cycle,
+		Category:  category,
+		ObjectIds: objectIds,
+		Type:      objectType,
+		From:      from,
+		Until:     until,
+	}
+	for _, spec := range metrics {
+		mq.Specs = append(mq.Specs, spec)
+	}
+	m := MetricResponseKeyed{}
 	err := c.post("metrics", &mq, &m)
 	return m, err
 }
