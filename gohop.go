@@ -61,6 +61,10 @@ func (c *Client) post(path string, data interface{}, dst interface{}) error {
 	return c.request(path, "POST", data, dst)
 }
 
+func (c *Client) get(path string, data interface{}, dst interface{}) error {
+	return c.request(path, "GET", data, dst)
+}
+
 // Posible Values for the Cycle Parameter of a Metric Query
 var (
 	CycleAuto  = "auto"
@@ -241,4 +245,44 @@ func (c *Client) KeyedMetricQuery(cycle, category, objectType string, fromMS, un
 	m := MetricResponseKeyed{}
 	err := c.post("metrics", &mq, &m)
 	return m, err
+}
+
+type NetworkList []struct {
+	Id          int64    `json:"id"`
+	NodeId      int64    `json:"node_id"`
+	Description string   `json:"description"`
+	Name        string   `json:"name"`
+	Idle        bool     `json:"idle"`
+	Vlans       VlanList //This is not part of the JSON returned by ExtraHop's /network endpoint, so this gets populated by a 2nd step.
+}
+
+type VlanList []struct {
+	Id          int64  `json:"id"`
+	NetworkId   int64  `json:"network_id"`
+	VlanId      int64  `json:"vlanid"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (c *Client) GetNetworkList(FetchVlans bool) (NetworkList, error) {
+	l := NetworkList{}
+	err := c.get("networks", "", &l)
+	if err != nil {
+		return nil, err
+	}
+	if FetchVlans {
+		for k, dp := range l {
+			err := c.GetVlanList(dp.Id, &dp.Vlans)
+			if err == nil {
+				l[k] = dp
+			}
+		}
+	}
+	return l, err
+}
+
+func (c *Client) GetVlanList(NetworkId int64, l *VlanList) error {
+	url := fmt.Sprintf("networks/%d/vlans", NetworkId)
+	err := c.get(url, "", &l)
+	return err
 }
