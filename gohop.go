@@ -5,26 +5,36 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"net/url"
 
 	"bosun.org/opentsdb"
 )
 
 type Client struct {
-	apiKey string
-	apiURL string
+	APIKey  string
+	APIUrl  *url.URL
+	APIHost string
 }
 
 // NewClient creates an instance of a ExtraHop REST API v1 client.
-func NewClient(apiURL, apiKey string) *Client {
+func NewClient(APIUrl, APIKey string) *Client {
+	u, err := url.Parse(APIUrl)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return &Client{
-		apiKey: apiKey,
-		apiURL: apiURL,
+		APIKey:  APIKey,
+		APIUrl:  u,
+		APIHost: u.Host,
 	}
 }
 
 func (c *Client) request(path, method string, data interface{}, dst interface{}) error {
-	url := fmt.Sprintf("%s/api/v1/%s", c.apiURL, path)
+	url := fmt.Sprintf("%s/api/v1/%s", c.APIUrl, path)
 	var d []byte
 	var err error
 	if data != nil {
@@ -37,7 +47,7 @@ func (c *Client) request(path, method string, data interface{}, dst interface{})
 	if err != nil {
 		return err
 	}
-	req.Header.Add("Authorization", fmt.Sprintf("ExtraHop apikey=%s", c.apiKey))
+	req.Header.Add("Authorization", fmt.Sprintf("ExtraHop apikey=%s", c.APIKey))
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
