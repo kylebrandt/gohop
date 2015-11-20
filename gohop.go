@@ -128,7 +128,7 @@ type MetricStat struct {
 
 type MetricStatSimple struct {
 	MetricStat
-	Values []int64 `json:"values"`
+	Values []float64 `json:"values"`
 }
 
 type MetricStatKeyed struct {
@@ -172,7 +172,7 @@ func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectK
 		if objectKey != "" && name != "" {
 			tagSet = opentsdb.TagSet{objectKey: name}
 		} else {
-			tagSet = nil
+			tagSet = opentsdb.TagSet{}
 		}
 		if !ok {
 			return md, fmt.Errorf("no name found for oid %s", s.Oid)
@@ -199,7 +199,7 @@ func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectK
 
 // Simple Metric query is for when you are making a query that doesn't
 // have any facets ("Keys").
-func (c *Client) SimpleMetricQuery(cycle, category, objectType string, fromMS, untilMS int64, metricsNames []string, objectIds []int64) (MetricResponseSimple, error) {
+func (c *Client) SimpleMetricQuery(cycle, category, objectType string, fromMS, untilMS int64, metrics []MetricSpec, objectIds []int64) (MetricResponseSimple, error) {
 	mq := MetricQuery{
 		Cycle:     cycle,
 		Category:  category,
@@ -208,8 +208,8 @@ func (c *Client) SimpleMetricQuery(cycle, category, objectType string, fromMS, u
 		From:      fromMS,
 		Until:     untilMS,
 	}
-	for _, name := range metricsNames {
-		mq.Specs = append(mq.Specs, MetricSpec{Name: name})
+	for _, spec := range metrics {
+		mq.Specs = append(mq.Specs, spec)
 	}
 	m := MetricResponseSimple{}
 	err := c.post("metrics", &mq, &m)
