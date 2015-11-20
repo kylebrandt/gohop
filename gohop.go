@@ -3,11 +3,14 @@ package gohop
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 
 	"bosun.org/opentsdb"
 )
@@ -165,6 +168,12 @@ func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectK
 	var md opentsdb.MultiDataPoint
 	for _, s := range mr.Stats {
 		name, ok := objectIdToName[s.Oid]
+		var tagSet opentsdb.TagSet
+		if objectKey != "" && name != "" {
+			tagSet = opentsdb.TagSet{objectKey: name}
+		} else {
+			tagSet = nil
+		}
 		if !ok {
 			return md, fmt.Errorf("no name found for oid %s", s.Oid)
 		}
@@ -180,7 +189,7 @@ func (mr *MetricResponseSimple) OpenTSDBDataPoints(metricNames []string, objectK
 			md = append(md, &opentsdb.DataPoint{
 				Metric:    metricName,
 				Timestamp: time / 1000,
-				Tags:      opentsdb.TagSet{objectKey: name},
+				Tags:      tagSet,
 				Value:     v,
 			})
 		}
@@ -295,4 +304,39 @@ func (c *Client) GetVlanList(NetworkId int64, l *VlanList) error {
 	url := fmt.Sprintf("networks/%d/vlans", NetworkId)
 	err := c.get(url, "", &l)
 	return err
+}
+
+type ExtraHopMetric struct {
+	ObjectType         string
+	ObjectId           int64
+	MetricCategory     string
+	MetricSpecName     string
+	MetricSpecCalcType string
+}
+
+func StoEHMetric(i string) (ExtraHopMetric, error) {
+	v := strings.Split(i, ".")
+
+	if len(v) < 4 || len(v) > 5 {
+		return ExtraHopMetric{}, errors.New(fmt.Sprintf("Provided metric (%s) had %d parts. Metric must have either 4 or 5 parts", i, len(v)))
+	}
+
+	if len(v) == 4 {
+		v = append(v, "")
+	}
+
+	oid, err := strconv.Atoi(v[1])
+
+	if err != nil {
+		return ExtraHopMetric{}, errors.New(fmt.Sprintf("Provided metric (%s) does not have a number as its second part (%s) ", i, v[1]))
+	}
+
+	return ExtraHopMetric{
+		ObjectType:         v[0],
+		ObjectId:           int64(oid),
+		MetricCategory:     v[2],
+		MetricSpecName:     v[3],
+		MetricSpecCalcType: v[4],
+	}, nil
+
 }
