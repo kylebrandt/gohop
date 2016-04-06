@@ -134,13 +134,23 @@ type MetricStatSimple struct {
 type MetricStatKeyed struct {
 	MetricStat
 	Values [][]struct {
-		Key struct {
-			KeyType string `json:"key_type"`
-			Str     string `json:"str"`
-		} `json:"key"`
-		Value int64  `json:"value"`
-		Vtype string `json:"vtype"`
+		Key      MetricKey       `json:"key"`
+		RawValue json.RawMessage `json:"value"`
+		Vtype    string          `json:"vtype"`
+		Value    int64
+		Tset     MetricStatTset
 	} `json:"values"`
+}
+
+type MetricKey struct {
+	KeyType string `json:"key_type"`
+	Str     string `json:"str"`
+}
+
+type MetricStatTset []struct {
+	Key   MetricKey `json:"key"`
+	Value int64     `json:"value"`
+	Vtype string    `json:"vtype"`
 }
 
 type MetricResponseBase struct {
@@ -208,9 +218,8 @@ func (c *Client) SimpleMetricQuery(cycle, category, objectType string, fromMS, u
 		From:      fromMS,
 		Until:     untilMS,
 	}
-	for _, spec := range metrics {
-		mq.Specs = append(mq.Specs, spec)
-	}
+	mq.Specs = append(mq.Specs, metrics...)
+
 	m := MetricResponseSimple{}
 	err := c.post("metrics", &mq, &m)
 	return m, err
@@ -263,7 +272,25 @@ func (c *Client) KeyedMetricQuery(cycle, category, objectType string, fromMS, un
 	}
 	m := MetricResponseKeyed{}
 	err := c.post("metrics", &mq, &m)
+	m.ParseValues()
 	return m, err
+}
+
+// ParseValues takes the RawValue field (which stores the plain JSON for the Values) and unmarshals it into
+// either the Tset or Value field, depending on the contents of the Vtype field
+func (m *MetricResponseKeyed) ParseValues() {
+	for a, _ := range (*m).Stats {
+		for b, _ := range (*m).Stats[a].Values {
+			for c, _ := range (*m).Stats[a].Values[b] {
+				if m.Stats[a].Values[b][c].Vtype == "tset" {
+					json.Unmarshal(m.Stats[a].Values[b][c].RawValue, &m.Stats[a].Values[b][c].Tset)
+				} else {
+					json.Unmarshal(m.Stats[a].Values[b][c].RawValue, &m.Stats[a].Values[b][c].Value)
+				}
+			}
+
+		}
+	}
 }
 
 type NetworkList []struct {
